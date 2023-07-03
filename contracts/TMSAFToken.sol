@@ -14,11 +14,15 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
   uint256 private _timeToVote = 1 days;
   uint256 public feePercentage = 5;
   uint256 private _accumulatedFees;
+  uint256 public feeBurnTime = 7 days;
+  uint256 public lastFeeBurnTime;
+  uint256[] private _votedPrices;
 
   mapping(address => uint256) private _balances;
   mapping(address => mapping(address => uint256)) private _allowances;
   mapping(address => uint256) private _votingPower;
-  mapping(uint256 => uint256) private _votes;
+  mapping(address => uint256) private _userVotes; // This will track the price option each user has voted for
+  mapping(uint256 => uint256) private _votePowers; // This will track the total voting power of each price option
 
   event VotingStarted(uint256 votingNumber, uint256 startTime);
   event VotingEnded(uint256 votingNumber, uint256 _tokenPrice);
@@ -40,7 +44,7 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
     return _totalSupply;
   }
 
-  function balanceOf(address account) external view returns (uint256) {
+  function balanceOf(address account) public view returns (uint256) {
     return _balances[account];
   }
 
@@ -51,10 +55,11 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
     );
     require(to != address(0), "sender cannot be the zero address");
 
-    _updateVotingPower(msg.sender);
-
     _balances[msg.sender] -= amount;
     _balances[to] += amount;
+
+    _updateVotingPower(msg.sender);
+    _updateVotingPower(to);
 
     emit Transfer(msg.sender, to, amount);
 
@@ -71,6 +76,9 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
     _allowances[sender][msg.sender] -= amount;
     _balances[sender] -= amount;
     _balances[recipient] += amount;
+
+    _updateVotingPower(sender);
+    _updateVotingPower(recipient);
 
     emit Transfer(sender, recipient, amount);
 
@@ -106,10 +114,15 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
   }
 
   function vote(uint256 price) external isAbleToVote {
-    _votes[price] += _balances[msg.sender];
+    require(price > 0, "Price should be more than 0");
 
-    if (_votes[price] > _votes[_currentPriceOption]) {
-      _currentPriceOption = price;
+    uint256 voterVotingPower = _votingPower[msg.sender];
+    _votePowers[price] += voterVotingPower;
+    _userVotes[msg.sender] = price;
+
+    // If it's the first vote for this price, add the price to _votedPrices array
+    if (_votePowers[price] == voterVotingPower) {
+      _votedPrices.push(price);
     }
   }
 
@@ -124,6 +137,7 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
     _votingPower[msg.sender] += netAmount;
 
     _accumulatedFees += feeAmount;
+    _updateVotingPower(msg.sender);
 
     emit TokensBought(msg.sender, netAmount, msg.value);
   }
@@ -136,6 +150,8 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
     _balances[msg.sender] -= amount;
     _totalSupply -= amount;
     _votingPower[msg.sender] -= amount;
+
+    _updateVotingPower(msg.sender);
 
     emit TokensSold(msg.sender, amount, sellAmount);
 
@@ -157,10 +173,26 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
       "Voting period has not ended yet"
     );
 
-    _tokenPrice = _currentPriceOption;
+    uint256 maxVotes = 0;
+    uint256 winningPrice;
+
+    // Iterate through _votedPrices to find the price with most votes
+    for (uint256 i = 0; i < _votedPrices.length; i++) {
+      uint256 price = _votedPrices[i];
+      uint256 votes = _votePowers[price];
+
+      if (votes > maxVotes) {
+        maxVotes = votes;
+        winningPrice = price;
+      }
+    }
+
+    _tokenPrice = winningPrice;
 
     _votingStartedTime = 0;
     _votingNumber++;
+
+    delete _votedPrices;
 
     emit VotingEnded(_votingNumber, _tokenPrice);
   }
@@ -175,26 +207,36 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
     emit Transfer(account, address(0), amount);
   }
 
+  function burnFromOwner(uint256 amount) external onlyOwner {
+    burn(msg.sender, amount);
+  }
+
   function _updateVotingPower(address account) internal {
-    uint256 previousPower = (_votingPower[account] * 10000) / _totalSupply;
-    uint256 updatedPower = (_balances[account] * 10000) / _totalSupply;
+    uint256 voterVotingPower = _votingPower[account];
+    uint256 voterVote = _userVotes[account];
 
-    _votingPower[account] = updatedPower;
-
-    if (updatedPower < 5 && previousPower >= 5) {
-      _votes[_currentPriceOption] -= _balances[account];
-
-      uint256 newWinner = _currentPriceOption;
-
-      _currentPriceOption = newWinner;
+    if (voterVote > 0) {
+      _votePowers[voterVote] -= voterVotingPower;
+      _votingPower[account] = _balances[account];
+      _votePowers[voterVote] += _votingPower[account];
+    } else {
+      _votingPower[account] = _balances[account];
     }
   }
 
-  function votingPower(address account) external view returns (uint256) {
-    return _votingPower[account];
+  function getVotingPower(uint256 price) external view returns (uint256) {
+    return _votePowers[price];
   }
 
-  function currentPriceOption() external view returns (uint256) {
-    return _currentPriceOption;
+  function getTokenPrice() external view returns (uint256) {
+    return _tokenPrice;
+  }
+
+  function getUserVote(address user) external view returns (uint256) {
+    return _userVotes[user];
+  }
+
+  function getVotingStartedTime() external view returns (uint256) {
+    return _votingStartedTime;
   }
 }

@@ -73,44 +73,88 @@ describe('TMSAFToken', () => {
     });
   });
 
-  // describe('StartVoting', () => {
-  //   it('Should change votingStartedTime, votingNumber, and emit VotingStarted event', async () => {
-  //     const { tMSAFToken, owner } = await deployContract();
+  describe('TransferFrom, Allowance, Approve function', () => {
+    it('Should allow approved address to transfer tokens', async () => {
+      const { tMSAFToken, owner, address1 } = await deployContract();
 
-  //     await tMSAFToken.startVoting();
+      await tMSAFToken.connect(owner).approve(address1.address, 50);
 
-  //     const votingStartedTime = await tMSAFToken.startVoting();
+      expect(
+        await tMSAFToken.allowance(owner.address, address1.address),
+      ).to.be.equal(50);
 
-  //     expect(votingStartedTime).to.not.equal(0);
+      await tMSAFToken
+        .connect(address1)
+        .transferFrom(owner.address, address1.address, 20);
 
-  //     // Check if VotingStarted event is emitted
-  //     const startVotingEvents = await tMSAFToken.queryFilter(
-  //       tMSAFToken.filters.VotingStarted(),
-  //     );
-  //     expect(startVotingEvents.length).to.equal(1);
-  //   });
-  // });
+      expect(await tMSAFToken.balanceOf(address1.address)).to.be.equal(20);
+      expect(await tMSAFToken.balanceOf(owner.address)).to.be.equal(979);
+      expect(
+        await tMSAFToken.allowance(owner.address, address1.address),
+      ).to.be.equal(30);
+    });
+  });
 
-  describe('_updateVotingPower function', () => {
-    it('Should update the voting power and select a new winner when necessary', async () => {
+  describe('Voting', () => {
+    it('Should allow eligible users to vote', async () => {
+      const { tMSAFToken, owner, address1 } = await deployContract();
+      await tMSAFToken.connect(owner).transfer(address1.address, 50);
+
+      await tMSAFToken.startVoting();
+
+      await tMSAFToken.connect(address1).vote(10);
+    });
+
+    it('Should not allow ineligible users to vote', async () => {
+      const { tMSAFToken, address2 } = await deployContract();
+
+      await tMSAFToken.startVoting();
+
+      await expect(tMSAFToken.connect(address2).vote(10)).to.be.revertedWith(
+        'Voter should have more than 0.05% of total token supply',
+      );
+    });
+
+    it('Should correctly change the token price after voting', async () => {
       const { tMSAFToken, owner, address1, address2 } = await deployContract();
 
-      await tMSAFToken.connect(address1).buy({ value: 16 });
-      await tMSAFToken.connect(address1).buy({ value: 14 });
+      await tMSAFToken.connect(owner).transfer(address1.address, 5);
+      await tMSAFToken.connect(owner).transfer(address2.address, 10);
 
-      await tMSAFToken.connect(owner).startVoting();
-      await tMSAFToken.connect(address1).vote(0);
-      await tMSAFToken.connect(address2).vote(1);
+      await tMSAFToken.startVoting();
 
-      expect(await tMSAFToken.votingPower(address1.address)).to.be.equal(123);
-      expect(await tMSAFToken.votingPower(address2.address)).to.be.equal(54);
-      expect(await tMSAFToken.currentPriceOption()).to.be.equal(0);
+      const votingStartedTime = await tMSAFToken.getVotingStartedTime();
+      console.log(`Voting started time: ${votingStartedTime.toString()}`);
 
-      await tMSAFToken.connect(address1).transfer(address2.address, 50);
+      await tMSAFToken.connect(address1).vote(10);
+      await tMSAFToken.connect(address2).vote(16);
 
-      expect(await tMSAFToken.votingPower(address1.address)).to.be.equal(73);
-      expect(await tMSAFToken.votingPower(address2.address)).to.be.equal(104);
-      expect(await tMSAFToken.currentPriceOption()).to.be.equal(1);
+      await ethers.provider.send('evm_increaseTime', [86400]);
+      await ethers.provider.send('evm_mine');
+
+      await tMSAFToken.endVoting();
+
+      const tokenPrice = await tMSAFToken.getTokenPrice();
+
+      expect(tokenPrice).to.equal(16);
+    });
+  });
+
+  describe('Burn function', () => {
+    it('Should correctly burn tokens', async () => {
+      const { tMSAFToken, owner } = await deployContract();
+
+      await tMSAFToken.burnFromOwner(99);
+      expect(await tMSAFToken.totalSupply()).to.be.equal(900);
+      expect(await tMSAFToken.balanceOf(owner.address)).to.be.equal(900);
+    });
+
+    it('Should not burn more tokens than available', async () => {
+      const { tMSAFToken, owner } = await deployContract();
+
+      await expect(tMSAFToken.burnFromOwner(1000)).to.be.revertedWith(
+        'must have at least amount tokens',
+      );
     });
   });
 });
