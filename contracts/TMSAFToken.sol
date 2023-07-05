@@ -21,8 +21,8 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
   mapping(address => uint256) private _balances;
   mapping(address => mapping(address => uint256)) private _allowances;
   mapping(address => uint256) private _votingPower;
-  mapping(address => uint256) private _userVotes; // This will track the price option each user has voted for
-  mapping(uint256 => uint256) private _votePowers; // This will track the total voting power of each price option
+  mapping(address => uint256) private _userVotesForPrice;
+  mapping(uint256 => uint256) private _powerOfPrice;
 
   event VotingStarted(uint256 votingNumber, uint256 startTime);
   event VotingEnded(uint256 votingNumber, uint256 _tokenPrice);
@@ -113,15 +113,16 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
     _;
   }
 
+  // make able to vote only if more than 0.05% ot total. Can vote for existing, but cannot vote his own
   function vote(uint256 price) external isAbleToVote {
     require(price > 0, "Price should be more than 0");
 
     uint256 voterVotingPower = _votingPower[msg.sender];
-    _votePowers[price] += voterVotingPower;
-    _userVotes[msg.sender] = price;
+    _powerOfPrice[price] += voterVotingPower;
+    _userVotesForPrice[msg.sender] = price;
 
-    // If it's the first vote for this price, add the price to _votedPrices array
-    if (_votePowers[price] == voterVotingPower) {
+    // works if its the first vote
+    if (_powerOfPrice[price] == voterVotingPower) {
       _votedPrices.push(price);
     }
   }
@@ -134,7 +135,6 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
 
     _balances[msg.sender] += netAmount;
     _totalSupply += netAmount;
-    _votingPower[msg.sender] += netAmount;
 
     _accumulatedFees += feeAmount;
     _updateVotingPower(msg.sender);
@@ -149,7 +149,6 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
     uint256 sellAmount = amount * _tokenPrice;
     _balances[msg.sender] -= amount;
     _totalSupply -= amount;
-    _votingPower[msg.sender] -= amount;
 
     _updateVotingPower(msg.sender);
 
@@ -172,18 +171,18 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
       block.timestamp >= _votingStartedTime + _timeToVote,
       "Voting period has not ended yet"
     );
+    // require(_votedPrices.length > 0, "noone did votes");
 
-    uint256 maxVotes = 0;
-    uint256 winningPrice;
+    uint256 maxVotingPower = 0;
+    uint256 winningPrice = _tokenPrice;
 
-    // Iterate through _votedPrices to find the price with most votes
     for (uint256 i = 0; i < _votedPrices.length; i++) {
-      uint256 price = _votedPrices[i];
-      uint256 votes = _votePowers[price];
+      uint256 votedPrice = _votedPrices[i];
+      uint256 totalPowerOfPrice = _powerOfPrice[votedPrice];
 
-      if (votes > maxVotes) {
-        maxVotes = votes;
-        winningPrice = price;
+      if (totalPowerOfPrice > maxVotingPower) {
+        maxVotingPower = totalPowerOfPrice;
+        winningPrice = votedPrice;
       }
     }
 
@@ -213,27 +212,27 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
 
   function _updateVotingPower(address account) internal {
     uint256 voterVotingPower = _votingPower[account];
-    uint256 voterVote = _userVotes[account];
+    uint256 votedPrice = _userVotesForPrice[account];
 
-    if (voterVote > 0) {
-      _votePowers[voterVote] -= voterVotingPower;
+    if (votedPrice > 0) {
+      _powerOfPrice[votedPrice] -= voterVotingPower;
       _votingPower[account] = _balances[account];
-      _votePowers[voterVote] += _votingPower[account];
+      _powerOfPrice[votedPrice] += _votingPower[account];
     } else {
       _votingPower[account] = _balances[account];
     }
   }
 
   function getVotingPower(uint256 price) external view returns (uint256) {
-    return _votePowers[price];
+    return _powerOfPrice[price];
   }
 
   function getTokenPrice() external view returns (uint256) {
     return _tokenPrice;
   }
 
-  function getUserVote(address user) external view returns (uint256) {
-    return _userVotes[user];
+  function getUserVoteForPrice(address user) external view returns (uint256) {
+    return _userVotesForPrice[user];
   }
 
   function getVotingStartedTime() external view returns (uint256) {

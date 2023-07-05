@@ -116,18 +116,19 @@ describe('TMSAFToken', () => {
     });
 
     it('Should correctly change the token price after voting', async () => {
-      const { tMSAFToken, owner, address1, address2 } = await deployContract();
+      const { tMSAFToken, owner, address1, address2, address3 } =
+        await deployContract();
 
       await tMSAFToken.connect(owner).transfer(address1.address, 5);
       await tMSAFToken.connect(owner).transfer(address2.address, 10);
+      await tMSAFToken.connect(owner).transfer(address3.address, 1);
 
       await tMSAFToken.startVoting();
-
-      const votingStartedTime = await tMSAFToken.getVotingStartedTime();
-      console.log(`Voting started time: ${votingStartedTime.toString()}`);
+      await tMSAFToken.connect(address3).buy({ value: 16 });
 
       await tMSAFToken.connect(address1).vote(10);
       await tMSAFToken.connect(address2).vote(16);
+      await tMSAFToken.connect(address3).vote(22);
 
       await ethers.provider.send('evm_increaseTime', [86400]);
       await ethers.provider.send('evm_mine');
@@ -136,7 +137,7 @@ describe('TMSAFToken', () => {
 
       const tokenPrice = await tMSAFToken.getTokenPrice();
 
-      expect(tokenPrice).to.equal(16);
+      expect(tokenPrice).to.equal(22);
     });
   });
 
