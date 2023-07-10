@@ -171,7 +171,6 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
       block.timestamp >= _votingStartedTime + _timeToVote,
       "Voting period has not ended yet"
     );
-    // require(_votedPrices.length > 0, "noone did votes");
 
     uint256 maxVotingPower = 0;
     uint256 winningPrice = _tokenPrice;

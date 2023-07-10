@@ -39,6 +39,52 @@ describe('TMSAFToken', () => {
       expect(await tMSAFToken.balanceOf(address1.address)).to.be.equal(73);
       expect(await tMSAFToken.balanceOf(address2.address)).to.be.equal(104);
     });
+
+    it('Should not allow transfers that exceed the balance', async () => {
+      const { tMSAFToken, owner, address1 } = await deployContract();
+
+      await expect(
+        tMSAFToken.connect(owner).transfer(address1.address, 1000),
+      ).to.be.revertedWith('must have a balance of at least amount');
+    });
+
+    it('Should not allow transfers to zero address', async () => {
+      const { tMSAFToken, owner } = await deployContract();
+
+      await expect(
+        tMSAFToken.connect(owner).transfer(ethers.ZeroAddress, 100),
+      ).to.be.revertedWith('sender cannot be the zero address');
+    });
+  });
+
+  describe('Approve function', () => {
+    it('Should return the correct allowance', async () => {
+      const { tMSAFToken, owner, address1 } = await deployContract();
+
+      await tMSAFToken.connect(owner).approve(address1.address, 50);
+
+      const allowance = await tMSAFToken.allowance(
+        owner.address,
+        address1.address,
+      );
+      expect(allowance).to.equal(50);
+    });
+
+    it('Should revert when the owner address is zero', async () => {
+      const { tMSAFToken, address1 } = await deployContract();
+
+      await expect(
+        tMSAFToken.allowance(ethers.ZeroAddress, address1.address),
+      ).to.be.revertedWith('Owner address cannot be zero');
+    });
+
+    it('Should revert when the spender address is zero', async () => {
+      const { tMSAFToken, owner } = await deployContract();
+
+      await expect(
+        tMSAFToken.allowance(owner.address, ethers.ZeroAddress),
+      ).to.be.revertedWith('Spender address cannot be zero');
+    });
   });
 
   describe('Buy function', () => {
