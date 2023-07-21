@@ -141,52 +141,6 @@ describe('TMSAFToken', () => {
     });
   });
 
-  describe('Voting', () => {
-    it('Should allow eligible users to vote', async () => {
-      const { tMSAFToken, owner, address1 } = await deployContract();
-      await tMSAFToken.connect(owner).transfer(address1.address, 50);
-
-      await tMSAFToken.startVoting();
-
-      await tMSAFToken.connect(address1).vote(10);
-    });
-
-    it('Should not allow ineligible users to vote', async () => {
-      const { tMSAFToken, address2 } = await deployContract();
-
-      await tMSAFToken.startVoting();
-
-      await expect(tMSAFToken.connect(address2).vote(10)).to.be.revertedWith(
-        'Voter should have more than 0.05% of total token supply',
-      );
-    });
-
-    it('Should correctly change the token price after voting', async () => {
-      const { tMSAFToken, owner, address1, address2, address3 } =
-        await deployContract();
-
-      await tMSAFToken.connect(owner).transfer(address1.address, 5);
-      await tMSAFToken.connect(owner).transfer(address2.address, 10);
-      await tMSAFToken.connect(owner).transfer(address3.address, 1);
-
-      await tMSAFToken.startVoting();
-      await tMSAFToken.connect(address3).buy({ value: 16 });
-
-      await tMSAFToken.connect(address1).vote(10);
-      await tMSAFToken.connect(address2).vote(16);
-      await tMSAFToken.connect(address3).vote(22);
-
-      await ethers.provider.send('evm_increaseTime', [86400]);
-      await ethers.provider.send('evm_mine');
-
-      await tMSAFToken.endVoting();
-
-      const tokenPrice = await tMSAFToken.getTokenPrice();
-
-      expect(tokenPrice).to.equal(22);
-    });
-  });
-
   describe('Burn function', () => {
     it('Should correctly burn tokens', async () => {
       const { tMSAFToken, owner } = await deployContract();

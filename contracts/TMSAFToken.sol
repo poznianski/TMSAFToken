@@ -6,26 +6,22 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
-  uint256 private _totalSupply;
-  uint256 private _currentPriceOption;
-  uint256 private _tokenPrice = 1;
-  uint256 private _votingStartedTime;
-  uint256 private _votingNumber;
-  uint256 private _timeToVote = 1 days;
-  uint256 public feePercentage = 5;
-  uint256 private _accumulatedFees;
+  uint256 internal _totalSupply;
+  uint256 internal _currentPriceOption;
+
+  uint256 internal feePercentage = 5;
+  uint256 internal _accumulatedFees;
   uint256 public feeBurnTime = 7 days;
   uint256 public lastFeeBurnTime;
-  uint256[] private _votedPrices;
 
-  mapping(address => uint256) private _balances;
-  mapping(address => mapping(address => uint256)) private _allowances;
-  mapping(address => uint256) private _votingPower;
-  mapping(address => uint256) private _userVotesForPrice;
-  mapping(uint256 => uint256) private _powerOfPrice;
+  uint256 internal _tokenPrice = 1;
 
-  event VotingStarted(uint256 votingNumber, uint256 startTime);
-  event VotingEnded(uint256 votingNumber, uint256 _tokenPrice);
+  mapping(address => uint256) internal _balances;
+  mapping(address => mapping(address => uint256)) internal _allowances;
+  mapping(address => uint256) internal _votingPower;
+  mapping(address => uint256) internal _userVotesForPrice;
+  mapping(uint256 => uint256) internal _powerOfPrice;
+
   event TokensBought(address indexed buyer, uint256 amount, uint256 totalCost);
   event TokensSold(address indexed seller, uint256 amount, uint256 totalEarned);
 
@@ -103,29 +99,7 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
     return true;
   }
 
-  modifier isAbleToVote() {
-    require(
-      (_balances[msg.sender] * 10000) / _totalSupply > 5,
-      "Voter should have more than 0.05% of total token supply"
-    );
-    require(_balances[msg.sender] > 0, "Voter should have at least one token");
-    require(_votingStartedTime > 0, "Voting has not started yet");
-    _;
-  }
-
   // make able to vote only if more than 0.05% ot total. Can vote for existing, but cannot vote his own
-  function vote(uint256 price) external isAbleToVote {
-    require(price > 0, "Price should be more than 0");
-
-    uint256 voterVotingPower = _votingPower[msg.sender];
-    _powerOfPrice[price] += voterVotingPower;
-    _userVotesForPrice[msg.sender] = price;
-
-    // works if its the first vote
-    if (_powerOfPrice[price] == voterVotingPower) {
-      _votedPrices.push(price);
-    }
-  }
 
   function buy() external payable {
     require(msg.value >= _tokenPrice, "Insufficient ether sent to buy tokens");
@@ -157,44 +131,6 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
     payable(msg.sender).transfer(sellAmount);
   }
 
-  function startVoting() external {
-    require(_votingStartedTime == 0, "Voting has already started");
-    _votingStartedTime = block.timestamp;
-    _votingNumber++;
-
-    emit VotingStarted(_votingNumber, _votingStartedTime);
-  }
-
-  function endVoting() external {
-    require(_votingStartedTime > 0, "Voting has not started yet");
-    require(
-      block.timestamp >= _votingStartedTime + _timeToVote,
-      "Voting period has not ended yet"
-    );
-
-    uint256 maxVotingPower = 0;
-    uint256 winningPrice = _tokenPrice;
-
-    for (uint256 i = 0; i < _votedPrices.length; i++) {
-      uint256 votedPrice = _votedPrices[i];
-      uint256 totalPowerOfPrice = _powerOfPrice[votedPrice];
-
-      if (totalPowerOfPrice > maxVotingPower) {
-        maxVotingPower = totalPowerOfPrice;
-        winningPrice = votedPrice;
-      }
-    }
-
-    _tokenPrice = winningPrice;
-
-    _votingStartedTime = 0;
-    _votingNumber++;
-
-    delete _votedPrices;
-
-    emit VotingEnded(_votingNumber, _tokenPrice);
-  }
-
   function burn(address account, uint256 amount) internal {
     require(account != address(0), "Burn from the zero address");
     require(_balances[account] >= amount, "must have at least amount tokens");
@@ -220,21 +156,5 @@ contract TMSAFToken is IERC20, Ownable, ReentrancyGuard {
     } else {
       _votingPower[account] = _balances[account];
     }
-  }
-
-  function getVotingPower(uint256 price) external view returns (uint256) {
-    return _powerOfPrice[price];
-  }
-
-  function getTokenPrice() external view returns (uint256) {
-    return _tokenPrice;
-  }
-
-  function getUserVoteForPrice(address user) external view returns (uint256) {
-    return _userVotesForPrice[user];
-  }
-
-  function getVotingStartedTime() external view returns (uint256) {
-    return _votingStartedTime;
   }
 }
